@@ -3,6 +3,11 @@ import time
 from bs4 import BeautifulSoup
 import re
 
+# Header per simulare browser reale
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+}
+
 # --- CONFIGURA QUI ---
 SEARCH_URLS = [
     "https://www.catawiki.com/it/s?q=Gold%20%26%20gold%20NIkka",
@@ -35,7 +40,7 @@ def extract_auction_ids(html):
     return list(set(ids))
 
 def extract_auction_details(auction_url):
-    resp = requests.get(auction_url)
+    resp = requests.get(auction_url, headers=HEADERS)
     soup = BeautifulSoup(resp.text, "html.parser")
     
     # Prezzo attuale
@@ -105,7 +110,7 @@ def main_loop():
     while True:
         for url in SEARCH_URLS:
             try:
-                resp = requests.get(url)
+                resp = requests.get(url, headers=HEADERS)
                 ids = extract_auction_ids(resp.text)
                 for auction_id in ids:
                     if auction_id not in notified_ids:
