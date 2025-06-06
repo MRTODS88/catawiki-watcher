@@ -43,6 +43,10 @@ def extract_auction_details(auction_url):
     resp = requests.get(auction_url, headers=HEADERS)
     soup = BeautifulSoup(resp.text, "html.parser")
     
+    # debug
+    with open("debug_catawiki.html", "w", encoding="utf-8") as f:
+    f.write(resp.text)
+    
     # Prezzo attuale
     try:
         price_str = soup.select_one('[data-test="lot-current-price"]').text
