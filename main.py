@@ -1,13 +1,11 @@
 import requests
 import time
-import os
 from bs4 import BeautifulSoup
+import re
 
 # --- CONFIGURA QUI ---
 SEARCH_URLS = [
     "https://www.catawiki.com/it/s?q=Gold%20%26%20gold%20NIkka",
-    "https://www.catawiki.com/it/s?q=Suntory",
-    "https://www.catawiki.com/it/s?q=macallan"
 ]
 TELEGRAM_BOT_TOKEN = '7825951821:AAHZL0usBlDhM3GEekTgRoNc-DArOipCdjc'
 CHAT_ID = '633015535'
@@ -36,6 +34,72 @@ def extract_auction_ids(html):
                         ids.append(id_part)
     return list(set(ids))
 
+def extract_auction_details(auction_url):
+    resp = requests.get(auction_url)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    
+    # Prezzo attuale
+    try:
+        price_str = soup.select_one('[data-test="lot-current-price"]').text
+        price = float(price_str.replace('€', '').replace('.', '').replace(',', '.').strip())
+    except Exception as e:
+        price = None
+
+    # Paese venditore
+    try:
+        location = soup.select_one('[data-test="seller-location"]').text.strip()
+    except Exception as e:
+        location = "?"
+
+    # Spedizione
+    shipping = 0
+    try:
+        # Cerca il valore della spedizione in euro, se disponibile
+        ship_text = ""
+        for div in soup.find_all('div'):
+            if div.text and "Spedizione" in div.text and "€" in div.text:
+                ship_text = div.text
+                break
+        if ship_text:
+            m = re.search(r"€\s*([\d\.,]+)", ship_text)
+            if m:
+                shipping = float(m.group(1).replace('.', '').replace(',', '.'))
+    except Exception as e:
+        shipping = 0
+
+    # Scadenza asta
+    try:
+        time_tag = soup.find('time')
+        auction_end = time_tag['datetime']
+    except Exception as e:
+        auction_end = "?"
+
+    # Commissione Catawiki (default 12.5%)
+    commission_rate = 0.125
+    try:
+        comm_elem = soup.find(string=lambda x: x and "Commissione Catawiki" in x)
+        if comm_elem:
+            m = re.search(r'(\d{1,2}[,.]?\d*)\%', comm_elem)
+            if m:
+                commission_rate = float(m.group(1).replace(',', '.')) / 100
+    except Exception as e:
+        commission_rate = 0.125
+
+    if price:
+        commission = round(price * commission_rate, 2)
+        totale = round(price + commission + shipping, 2)
+    else:
+        commission = totale = 0
+
+    return {
+        'prezzo': price,
+        'ubicazione': location,
+        'spedizione': shipping,
+        'commissione': commission,
+        'totale': totale,
+        'fine': auction_end
+    }
+
 def main_loop():
     global notified_ids
     while True:
@@ -45,9 +109,19 @@ def main_loop():
                 ids = extract_auction_ids(resp.text)
                 for auction_id in ids:
                     if auction_id not in notified_ids:
-                        # Invia la notifica e marca come notificato
-                        message = f"Nuova asta trovata: https://www.catawiki.com/it/l/{auction_id}"
-                        send_telegram(message)
+                        auction_url = f"https://www.catawiki.com/it/l/{auction_id}"
+                        details = extract_auction_details(auction_url)
+                        msg = (
+                            f"🟡 NUOVA ASTA\n"
+                            f"{auction_url}\n"
+                            f"Ubicazione: {details['ubicazione']}\n"
+                            f"Prezzo attuale: €{details['prezzo']}\n"
+                            f"Spedizione: €{details['spedizione']}\n"
+                            f"Commissione stimata: €{details['commissione']}\n"
+                            f"Totale stimato: €{details['totale']}\n"
+                            f"Fine asta: {details['fine']}\n"
+                        )
+                        send_telegram(msg)
                         notified_ids.add(auction_id)
             except Exception as e:
                 print(f"Errore su {url}: {e}")
